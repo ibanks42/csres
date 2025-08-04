@@ -147,22 +147,3 @@ If you get a "resolution not supported" error, check that your monitor supports 
 go mod tidy
 go build -o csres.exe
 ```
-
-## Dependencies
-
-- [fsnotify](https://github.com/fsnotify/fsnotify) - File system notifications
-
-## License
-
-This project is provided as-is for educational and personal use.
-
-## Releases
-
-Releases are automatically built and published when new tags are pushed. To create a new release:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-This will trigger the GitHub Actions workflow to build and publish the release.
