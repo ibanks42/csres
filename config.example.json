@@ -1,0 +1,20 @@
+{
+  "default_resolution": {
+    "width": 1920,
+    "height": 1080,
+    "frequency": 144
+  },
+  "default_monitor": "\\\\.\\DISPLAY1",
+  "applications": [
+    {
+      "process_name": "cs2.exe",
+      "resolution": {
+        "width": 1280,
+        "height": 960,
+        "frequency": 144
+      },
+      "monitor_name": "\\\\.\\DISPLAY1"
+    }
+  ],
+  "poll_interval": 2
+}

@@ -1,0 +1,100 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+
+      - name: Get dependencies
+        run: go mod download
+
+      - name: Generate version number
+        id: version
+        run: |
+          # Extract version from git tag
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          Write-Host "Building release for tag: $tag"
+          Write-Host "Using version: $version"
+
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+        shell: powershell
+
+      - name: Build application
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          Write-Host "Building with version: $version"
+          go build -ldflags "-s -w -X main.Version=$version" -o csres.exe
+          echo "Built csres.exe v$version successfully"
+
+      - name: Test build
+        run: |
+          # Test version output
+          ./csres.exe --version
+          echo "Application built and version check successful"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.TAG }}
+          name: v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## CS Resolution Monitor v${{ steps.version.outputs.VERSION }}
+
+            Automatically built from commit ${{ github.sha }}
+
+            ### Features
+            - **Multi-Monitor Support**: Target specific monitors for resolution changes
+            - **Auto Resolution Switching**: Changes resolution when Counter-Strike 2 or other configured apps start
+            - **Live Config Reload**: Update settings without restarting the application
+            - **Graceful Restoration**: Restores original resolution when applications close
+
+            ### Installation
+            1. Download `csres.exe` from the assets below
+            2. Run the application to generate a default `config.json`
+            3. Edit the configuration to add your applications and target resolutions
+            4. Run again to start monitoring
+
+            ### Configuration Example
+            ```json
+            {
+              "default_resolution": {"width": 1920, "height": 1080, "frequency": 144},
+              "default_monitor": "\\\\.\\DISPLAY1",
+              "applications": [
+                {
+                  "process_name": "cs2.exe",
+                  "resolution": {"width": 1280, "height": 960, "frequency": 144},
+                  "monitor_name": "\\\\.\\DISPLAY1"
+                }
+              ],
+              "poll_interval": 2
+            }
+            ```
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/commits/main
+          files: |
+            csres.exe
+            config.example.json
+          draft: false
+          prerelease: false
