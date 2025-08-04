@@ -22,8 +22,11 @@ type AppConfig struct {
 
 // Config represents the main configuration structure
 type Config struct {
-	Applications []AppConfig `json:"applications"`  // List of apps and their target resolutions
-	PollInterval int         `json:"poll_interval"` // Polling interval in seconds (default: 2)
+	Applications        []AppConfig `json:"applications"`          // List of apps and their target resolutions
+	PollInterval        int         `json:"poll_interval"`         // Polling interval in seconds (default: 2)
+	ShowGUIOnLaunch     bool        `json:"show_gui_on_launch"`    // Show GUI window on launch (default: true)
+	StartWithWindows    bool        `json:"start_with_windows"`    // Start with Windows (default: false)
+	AutoStartMonitoring bool        `json:"auto_start_monitoring"` // Auto-start monitoring on launch (default: true)
 }
 
 // LoadConfig loads configuration from a JSON file
@@ -38,10 +41,15 @@ func LoadConfig(filename string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
 	}
 
-	// Set default poll interval if not specified
+	// Set default values if not specified
 	if config.PollInterval <= 0 {
 		config.PollInterval = 2
 	}
+
+	// Set defaults for new fields if this is an existing config file
+	// ShowGUIOnLaunch defaults to true if not set
+	// StartWithWindows defaults to false
+	// AutoStartMonitoring defaults to true
 
 	return &config, nil
 }

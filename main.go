@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -304,11 +305,52 @@ func main() {
 		return
 	}
 
-	configFile := DefaultConfigFile
-	if len(os.Args) > 1 {
-		configFile = os.Args[1]
+	// Handle help flag
+	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
+		fmt.Printf("CS Resolution Monitor v%s\n", Version)
+		fmt.Println("Usage:")
+		fmt.Println("  csres [config-file]        - Start GUI mode (default)")
+		fmt.Println("  csres --cli [config-file]  - Start CLI mode")
+		fmt.Println("  csres --version            - Show version")
+		fmt.Println("  csres --help               - Show this help")
+		return
 	}
 
+	configFile := DefaultConfigFile
+	cliMode := false
+
+	// Parse command line arguments
+	args := os.Args[1:]
+	for _, arg := range args {
+		switch arg {
+		case "--cli", "-c":
+			cliMode = true
+		default:
+			// If it's not a flag, treat it as config file
+			if !strings.HasPrefix(arg, "-") {
+				configFile = arg
+			}
+		}
+	}
+
+	// If no specific config file was provided but there are args, check if the first non-flag arg is a config file
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") && !cliMode {
+		configFile = args[0]
+	} else if len(args) > 1 && cliMode && !strings.HasPrefix(args[1], "-") {
+		configFile = args[1]
+	}
+
+	if cliMode {
+		// Run in CLI mode (original behavior)
+		runCLIMode(configFile)
+	} else {
+		// Run in GUI mode (default)
+		runGUIMode(configFile)
+	}
+}
+
+// runCLIMode runs the application in command-line interface mode
+func runCLIMode(configFile string) {
 	// Check if config file exists, create default if not
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		log.Printf("Config file %s not found, creating default...", configFile)
@@ -330,6 +372,15 @@ func main() {
 	}
 }
 
+// runGUIMode runs the application in graphical user interface mode
+func runGUIMode(configFile string) {
+	// Create and start GUI
+	gui := NewGUIApp(configFile)
+	if err := gui.Run(); err != nil {
+		log.Fatalf("GUI error: %v", err)
+	}
+}
+
 // createDefaultConfig creates a default configuration file
 func createDefaultConfig(filename string) error {
 	defaultConfig := &Config{
@@ -343,7 +394,10 @@ func createDefaultConfig(filename string) error {
 				},
 			},
 		},
-		PollInterval: 2,
+		PollInterval:        2,
+		ShowGUIOnLaunch:     true,
+		StartWithWindows:    false,
+		AutoStartMonitoring: true,
 	}
 
 	return SaveConfig(defaultConfig, filename)
