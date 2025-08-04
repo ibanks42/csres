@@ -14,10 +14,6 @@ const (
 	DefaultConfigFile = "config.json"
 )
 
-var (
-	Version = "dev" // This will be overridden during build
-)
-
 // ResolutionMonitor is the main application structure
 type ResolutionMonitor struct {
 	config         *Config
@@ -89,7 +85,7 @@ func NewResolutionMonitor(configPath string) (*ResolutionMonitor, error) {
 
 // Start begins the monitoring process
 func (rm *ResolutionMonitor) Start() error {
-	log.Printf("Starting CS Resolution Monitor v%s...", Version)
+	log.Printf("Starting CS Resolution Monitor...")
 
 	// List available monitors
 	monitors, err := rm.displayManager.GetAvailableMonitors()
@@ -301,13 +297,13 @@ func (rm *ResolutionMonitor) shutdown() error {
 func main() {
 	// Handle version flag
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Printf("CS Resolution Monitor v%s\n", Version)
+		fmt.Println("CS Resolution Monitor")
 		return
 	}
 
 	// Handle help flag
 	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
-		fmt.Printf("CS Resolution Monitor v%s\n", Version)
+		fmt.Println("CS Resolution Monitor")
 		fmt.Println("Usage:")
 		fmt.Println("  csres [config-file]        - Start GUI mode (default)")
 		fmt.Println("  csres --cli [config-file]  - Start CLI mode")

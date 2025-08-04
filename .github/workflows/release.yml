@@ -28,25 +28,18 @@ jobs:
       - name: Get dependencies
         run: go mod download
 
-      - name: Generate version number
-        id: version
+      - name: Install Fyne CLI
         run: |
-          # Extract version from git tag
-          $tag = "${{ github.ref_name }}"
-          $version = $tag.TrimStart('v')
-          Write-Host "Building release for tag: $tag"
-          Write-Host "Using version: $version"
+          go install fyne.io/tools/cmd/fyne@latest
+          echo "Installed Fyne CLI successfully"
 
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
-        shell: powershell
-
-      - name: Build application
+      - name: Package with Fyne
         run: |
-          $version = "${{ steps.version.outputs.VERSION }}"
+          $version = "${{ github.ref_name }}".TrimStart('v')
           Write-Host "Building with version: $version"
-          go build -ldflags "-s -w -X main.Version=$version" -o csres.exe
-          echo "Built csres.exe v$version successfully"
+          # Package the application with Fyne using semantic versioning
+          fyne package -os windows -icon icon.png -name csres --app-version $version --app-build ${{ github.run_number }}
+          echo "Built and packaged application with Fyne successfully"
 
       - name: Test build
         run: |
@@ -57,10 +50,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.version.outputs.TAG }}
-          name: v${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           body: |
-            ## CS Resolution Monitor v${{ steps.version.outputs.VERSION }}
+            ## CS Resolution Monitor ${{ github.ref_name }}
 
             Automatically built from commit ${{ github.sha }}
 
@@ -96,5 +89,6 @@ jobs:
           files: |
             csres.exe
             config.example.json
+            csres.exe.zip
           draft: false
           prerelease: false
