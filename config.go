@@ -22,10 +22,8 @@ type AppConfig struct {
 
 // Config represents the main configuration structure
 type Config struct {
-	DefaultResolution Resolution  `json:"default_resolution"`        // Resolution to restore when apps close
-	DefaultMonitor    string      `json:"default_monitor,omitempty"` // Default monitor name, empty = primary
-	Applications      []AppConfig `json:"applications"`              // List of apps and their target resolutions
-	PollInterval      int         `json:"poll_interval"`             // Polling interval in seconds (default: 2)
+	Applications []AppConfig `json:"applications"`  // List of apps and their target resolutions
+	PollInterval int         `json:"poll_interval"` // Polling interval in seconds (default: 2)
 }
 
 // LoadConfig loads configuration from a JSON file

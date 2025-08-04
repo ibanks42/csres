@@ -1,10 +1,4 @@
 {
-  "default_resolution": {
-    "width": 1920,
-    "height": 1080,
-    "frequency": 144
-  },
-  "default_monitor": "\\\\.\\DISPLAY1",
   "applications": [
     {
       "process_name": "cs2.exe",

@@ -112,7 +112,6 @@ func (rm *ResolutionMonitor) Start() error {
 	if primaryRes, exists := rm.originalRes[""]; exists {
 		log.Printf("Primary monitor resolution: %dx%d@%dHz", primaryRes.Width, primaryRes.Height, primaryRes.Frequency)
 	}
-	log.Printf("Default resolution: %dx%d@%dHz", rm.config.DefaultResolution.Width, rm.config.DefaultResolution.Height, rm.config.DefaultResolution.Frequency)
 
 	// Start config file watcher
 	rm.configWatcher.Start()
@@ -211,7 +210,7 @@ func (rm *ResolutionMonitor) handleAppStart(processName string, appConfig AppCon
 	return nil
 }
 
-// handleAppStop restores default resolution when monitored applications stop
+// handleAppStop restores original resolution when monitored applications stop
 func (rm *ResolutionMonitor) handleAppStop(processName string) error {
 	// Find which monitor this app was using
 	var appMonitorName string
@@ -231,34 +230,35 @@ func (rm *ResolutionMonitor) handleAppStop(processName string) error {
 		}
 	}
 
-	// If no more apps are using this monitor, restore its default resolution
+	// If no more apps are using this monitor, restore its original resolution
 	if !monitorStillInUse {
-		defaultMonitor := rm.config.DefaultMonitor
-		if appMonitorName != "" {
-			defaultMonitor = appMonitorName
+		// Get the original resolution for this monitor
+		originalRes, exists := rm.originalRes[appMonitorName]
+		if !exists {
+			return fmt.Errorf("no original resolution stored for monitor %s", appMonitorName)
 		}
 
-		currentRes, err := rm.displayManager.GetCurrentResolutionForMonitor(defaultMonitor)
+		currentRes, err := rm.displayManager.GetCurrentResolutionForMonitor(appMonitorName)
 		if err != nil {
 			return err
 		}
 
-		// Only change if current resolution is different from default
-		if !IsResolutionEqual(*currentRes, rm.config.DefaultResolution) {
+		// Only change if current resolution is different from original
+		if !IsResolutionEqual(*currentRes, *originalRes) {
 			monitorDesc := "primary monitor"
-			if defaultMonitor != "" {
-				monitorDesc = fmt.Sprintf("monitor %s", defaultMonitor)
+			if appMonitorName != "" {
+				monitorDesc = fmt.Sprintf("monitor %s", appMonitorName)
 			}
 
-			log.Printf("Restoring default resolution: %dx%d@%dHz on %s",
-				rm.config.DefaultResolution.Width, rm.config.DefaultResolution.Height, rm.config.DefaultResolution.Frequency, monitorDesc)
+			log.Printf("Restoring original resolution: %dx%d@%dHz on %s",
+				originalRes.Width, originalRes.Height, originalRes.Frequency, monitorDesc)
 
-			if err := rm.displayManager.ChangeResolutionForMonitor(rm.config.DefaultResolution, defaultMonitor); err != nil {
+			if err := rm.displayManager.ChangeResolutionForMonitor(*originalRes, appMonitorName); err != nil {
 				return err
 			}
 
-			delete(rm.currentAppRes, defaultMonitor)
-			log.Printf("Default resolution restored on %s", monitorDesc)
+			delete(rm.currentAppRes, appMonitorName)
+			log.Printf("Original resolution restored on %s", monitorDesc)
 		}
 	}
 
@@ -269,15 +269,21 @@ func (rm *ResolutionMonitor) handleAppStop(processName string) error {
 func (rm *ResolutionMonitor) shutdown() error {
 	log.Println("Shutting down...")
 
-	// Restore default resolution on all monitors that were changed
+	// Restore original resolution on all monitors that were changed
 	for monitorName := range rm.currentAppRes {
 		monitorDesc := "primary monitor"
 		if monitorName != "" {
 			monitorDesc = fmt.Sprintf("monitor %s", monitorName)
 		}
 
-		log.Printf("Restoring default resolution on %s before exit...", monitorDesc)
-		if err := rm.displayManager.ChangeResolutionForMonitor(rm.config.DefaultResolution, monitorName); err != nil {
+		originalRes, exists := rm.originalRes[monitorName]
+		if !exists {
+			log.Printf("Warning: no original resolution stored for %s", monitorDesc)
+			continue
+		}
+
+		log.Printf("Restoring original resolution on %s before exit...", monitorDesc)
+		if err := rm.displayManager.ChangeResolutionForMonitor(*originalRes, monitorName); err != nil {
 			log.Printf("Error restoring resolution on %s: %v", monitorDesc, err)
 		}
 	}
@@ -327,12 +333,6 @@ func main() {
 // createDefaultConfig creates a default configuration file
 func createDefaultConfig(filename string) error {
 	defaultConfig := &Config{
-		DefaultResolution: Resolution{
-			Width:     1920,
-			Height:    1080,
-			Frequency: 144,
-		},
-		DefaultMonitor: "\\\\.\\DISPLAY1",
 		Applications: []AppConfig{
 			{
 				ProcessName: "cs2.exe",
