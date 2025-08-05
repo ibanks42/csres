@@ -504,18 +504,51 @@ func (g *GUIApp) showAppDialog(app AppConfig, isEdit bool) {
 		resolutionSelect.Options = resolutionOptions
 		restoreResolutionSelect.Options = restoreResolutionOptions
 
-		// Set initial selections
+		// Set target resolution selection
 		if app.Resolution.Width > 0 {
+			// Try to find the same resolution (prioritizing highest frequency)
 			targetResStr := fmt.Sprintf("%dx%d@%dHz", app.Resolution.Width, app.Resolution.Height, app.Resolution.Frequency)
-			resolutionSelect.SetSelected(targetResStr)
+			found := false
+
+			// First try exact match
+			for _, option := range resolutionOptions {
+				if option == targetResStr {
+					resolutionSelect.SetSelected(option)
+					found = true
+					break
+				}
+			}
+
+			// If no exact match, try to find same resolution with different frequency (prioritize highest)
+			if !found {
+				highestFreq := uint32(0)
+				var bestMatch string
+				for _, option := range resolutionOptions {
+					if res, exists := resolutionMap[option]; exists {
+						if res.Width == app.Resolution.Width && res.Height == app.Resolution.Height {
+							if res.Frequency > highestFreq {
+								highestFreq = res.Frequency
+								bestMatch = option
+							}
+						}
+					}
+				}
+				if bestMatch != "" {
+					resolutionSelect.SetSelected(bestMatch)
+					found = true
+				}
+			}
+
+			// If still no match, select highest resolution available
+			if !found && len(resolutionOptions) > 0 {
+				resolutionSelect.SetSelected(resolutionOptions[0])
+			}
 		} else if len(resolutionOptions) > 0 {
 			resolutionSelect.SetSelected(resolutionOptions[0])
 		}
 
-		if app.RestoreResolution != nil {
-			targetResStr := fmt.Sprintf("%dx%d@%dHz", app.RestoreResolution.Width, app.RestoreResolution.Height, app.RestoreResolution.Frequency)
-			restoreResolutionSelect.SetSelected(targetResStr)
-		} else if len(restoreResolutionOptions) > 0 {
+		// Set restore resolution selection - always select highest available when monitor changes
+		if len(restoreResolutionOptions) > 0 {
 			restoreResolutionSelect.SetSelected(restoreResolutionOptions[0])
 		}
 	}
