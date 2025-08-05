@@ -38,14 +38,20 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart('v')
           Write-Host "Building with version: $version"
           # Package the application with Fyne using semantic versioning
-          fyne package -os windows -icon icon.png -name csres --app-version $version --app-build ${{ github.run_number }}
+          fyne package -os windows -icon icon.png -name "CS Resolution Monitor" --app-version $version --app-build ${{ github.run_number }}
           echo "Built and packaged application with Fyne successfully"
 
       - name: Test build
         run: |
           # Test version output
-          ./csres.exe --version
+          ./"CS Resolution Monitor.exe" --version
           echo "Application built and version check successful"
+
+      - name: Rename for UPX
+        run: |
+          # Rename to simple name for UPX compatibility
+          Move-Item "CS Resolution Monitor.exe" "csres.exe"
+          echo "Renamed to simple name for UPX compression"
 
       - name: Compress with UPX
         uses: crazy-max/ghaction-upx@v3
@@ -55,11 +61,11 @@ jobs:
             ./csres.exe
           args: -fq
 
-      - name: Rename to final name
+      - name: Rename back to final name
         run: |
-          # Rename the compressed file to the final name
+          # Rename the compressed file back to the final name
           Move-Item "csres.exe" "CS Resolution Monitor.exe"
-          echo "Renamed compressed file to final name"
+          echo "Renamed compressed file back to final name"
 
       - name: Create zip file
         run: |
@@ -68,7 +74,7 @@ jobs:
           echo "Created zip file with executable and config"
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
