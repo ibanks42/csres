@@ -3,8 +3,12 @@ package main
 import (
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"syscall"
 	"unsafe"
+
+	"github.com/StackExchange/wmi"
 )
 
 // DEVMODE represents the Win32 DEVMODE structure
@@ -61,6 +65,15 @@ const (
 	DISPLAY_DEVICE_ACTIVE              = 0x00000001
 )
 
+// Win32_PnPEntity represents a WMI PnP entity
+type Win32_PnPEntity struct {
+	Name        string
+	Description string
+	DeviceID    string
+	PNPDeviceID string
+	Status      string
+}
+
 // MonitorInfo represents information about a monitor
 type MonitorInfo struct {
 	DeviceName   string
@@ -93,6 +106,9 @@ func (dm *DisplayManager) GetAvailableMonitors() ([]MonitorInfo, error) {
 	var displayDevice DISPLAY_DEVICE
 	displayDevice.Cb = uint32(unsafe.Sizeof(displayDevice))
 
+	// Get monitor names from WMI first
+	monitorNames := dm.getMonitorNamesFromWMI()
+
 	for i := uint32(0); ; i++ {
 		ret, _, err := dm.procEnumDisplayDevicesW.Call(
 			uintptr(unsafe.Pointer(nil)),
@@ -112,14 +128,56 @@ func (dm *DisplayManager) GetAvailableMonitors() ([]MonitorInfo, error) {
 		deviceName := syscall.UTF16ToString(displayDevice.DeviceName[:])
 		deviceString := syscall.UTF16ToString(displayDevice.DeviceString[:])
 
-		// Log the device state for debugging
-		log.Printf("Found display device: Name=%s String=%s Flags=0x%x", deviceName, deviceString, displayDevice.StateFlags)
-
 		// Include monitors that are either attached to desktop or active
 		if displayDevice.StateFlags&(DISPLAY_DEVICE_ATTACHED_TO_DESKTOP|DISPLAY_DEVICE_ACTIVE) != 0 {
+			// Get the actual monitor name by enumerating monitors attached to this device
+			monitorName := deviceString // Default to device string if we can't get monitor name
+
+			// Try to get the actual monitor name by enumerating monitors attached to this device
+			var monitorDevice DISPLAY_DEVICE
+			monitorDevice.Cb = uint32(unsafe.Sizeof(monitorDevice))
+
+			for j := uint32(0); ; j++ {
+				ret, _, err := dm.procEnumDisplayDevicesW.Call(
+					uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(deviceName))),
+					uintptr(j),
+					uintptr(unsafe.Pointer(&monitorDevice)),
+					uintptr(0),
+				)
+
+				if err != nil && err != syscall.Errno(0) {
+					break
+				}
+
+				if ret == 0 {
+					break // No more monitors for this device
+				}
+
+				// If this is a monitor (not a GPU), use its name
+				if monitorDevice.StateFlags&DISPLAY_DEVICE_ACTIVE != 0 {
+					// Try to get monitor name from WMI list
+					if len(monitorNames) > 0 {
+						// Use the first available monitor name (simple approach)
+						monitorName = monitorNames[0]
+						// Remove the used name from the list
+						if len(monitorNames) > 1 {
+							monitorNames = monitorNames[1:]
+						}
+						break
+					}
+
+					// Fallback to DeviceString if WMI didn't work
+					monitorNameStr := syscall.UTF16ToString(monitorDevice.DeviceString[:])
+					if monitorNameStr != "" && monitorNameStr != "Generic PnP Monitor" {
+						monitorName = monitorNameStr
+						break
+					}
+				}
+			}
+
 			monitor := MonitorInfo{
 				DeviceName:   deviceName,
-				DeviceString: deviceString,
+				DeviceString: monitorName, // Use the actual monitor name
 				IsPrimary:    displayDevice.StateFlags&DISPLAY_DEVICE_PRIMARY_DEVICE != 0,
 			}
 
@@ -262,6 +320,39 @@ func (dm *DisplayManager) SetResolution(monitorName string, resolution Resolutio
 	}
 
 	return fmt.Errorf("failed to change resolution after %d attempts. Last error: %v", maxRetries, lastError)
+}
+
+// getMonitorNamesFromWMI gets all monitor names using WMI
+func (dm *DisplayManager) getMonitorNamesFromWMI() []string {
+	var monitorNames []string
+
+	// Query WMI for monitor devices
+	var devices []Win32_PnPEntity
+	query := `SELECT Name, Description, DeviceID, PNPDeviceID, Status FROM Win32_PnPEntity WHERE PNPDeviceID LIKE "%DISPLAY%"`
+	err := wmi.Query(query, &devices)
+	if err != nil {
+		log.Printf("WMI query failed: %v", err)
+		return monitorNames
+	}
+
+	for _, device := range devices {
+		// Filter for actual monitors (not just display adapters)
+		if strings.Contains(device.Name, "Monitor") ||
+			strings.Contains(device.Description, "Monitor") ||
+			strings.Contains(device.PNPDeviceID, "MONITOR") {
+
+			// Extract the monitor name from parentheses
+			// Format is typically: "Generic Monitor (MODEL_NAME)"
+			re := regexp.MustCompile(`\(([^)]+)\)`)
+			matches := re.FindStringSubmatch(device.Name)
+			if len(matches) >= 2 {
+				monitorName := matches[1]
+				monitorNames = append(monitorNames, monitorName)
+			}
+		}
+	}
+
+	return monitorNames
 }
 
 // IsResolutionEqual compares two resolutions for equality

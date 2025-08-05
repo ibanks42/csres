@@ -387,6 +387,7 @@ func createDefaultConfig(filename string) error {
 		Applications: []AppConfig{
 			{
 				ProcessName: "cs2.exe",
+				MonitorName: "", // Primary monitor
 				Resolution: Resolution{
 					Width:     1280,
 					Height:    960,

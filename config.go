@@ -17,7 +17,7 @@ type Resolution struct {
 type AppConfig struct {
 	ProcessName       string      `json:"process_name"` // e.g., "notepad.exe"
 	Resolution        Resolution  `json:"resolution"`
-	MonitorName       string      `json:"monitor_name,omitempty"`       // Optional: specific monitor name, empty = primary
+	MonitorName       string      `json:"monitor_name"`                 // Required: specific monitor name, empty = primary
 	RestoreResolution *Resolution `json:"restore_resolution,omitempty"` // Optional: resolution to restore to when app closes. If nil, uses original resolution
 }
 

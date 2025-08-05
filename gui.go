@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -373,12 +374,29 @@ func (g *GUIApp) deleteApplication(appInfo string) {
 				// Remove the application from config
 				newApps := []AppConfig{}
 				for _, configApp := range config.Applications {
-					// Check if this is the app to delete - all fields must match exactly
+					// Check if this is the app to delete - use a more robust matching
+					// Normalize monitor names for comparison
+					configMonitor := strings.TrimSpace(configApp.MonitorName)
+					compareMonitor := strings.TrimSpace(app.MonitorName)
+
+					// Empty string and Primary Monitor are equivalent
+					if configMonitor == "Primary Monitor" {
+						configMonitor = ""
+					}
+					if compareMonitor == "Primary Monitor" {
+						compareMonitor = ""
+					}
+
+					// Match by process name and resolution (most reliable identifiers)
 					isMatch := configApp.ProcessName == app.ProcessName &&
-						configApp.MonitorName == app.MonitorName &&
 						configApp.Resolution.Width == app.Resolution.Width &&
 						configApp.Resolution.Height == app.Resolution.Height &&
 						configApp.Resolution.Frequency == app.Resolution.Frequency
+
+					// If monitor names are specified, also match by monitor
+					if configMonitor != "" || compareMonitor != "" {
+						isMatch = isMatch && configMonitor == compareMonitor
+					}
 
 					// Keep all apps that DON'T match (i.e., delete the one that matches)
 					if !isMatch {
@@ -409,14 +427,19 @@ func (g *GUIApp) showAppDialog(app AppConfig, isEdit bool) {
 	// Store the original app config for edit comparisons - make a copy to avoid modification
 	var originalApp *AppConfig
 	if isEdit {
+		monitorName := strings.TrimSpace(app.MonitorName)
+		if monitorName == "Primary Monitor" {
+			monitorName = ""
+		}
 		originalApp = &AppConfig{
 			ProcessName: app.ProcessName,
-			MonitorName: app.MonitorName,
+			MonitorName: monitorName,
 			Resolution: Resolution{
 				Width:     app.Resolution.Width,
 				Height:    app.Resolution.Height,
 				Frequency: app.Resolution.Frequency,
 			},
+			RestoreResolution: app.RestoreResolution,
 		}
 	}
 	title := "Add Application"
@@ -581,7 +604,7 @@ func (g *GUIApp) saveApplication(process string, resolution, restoreResolution R
 	newApp := AppConfig{
 		ProcessName:       process,
 		Resolution:        resolution,
-		MonitorName:       monitor,
+		MonitorName:       monitor, // This should be the device name from monitorMap
 		RestoreResolution: &restoreResolution,
 	}
 
@@ -593,17 +616,29 @@ func (g *GUIApp) saveApplication(process string, resolution, restoreResolution R
 		// Remove the original entry completely
 		newApps := []AppConfig{}
 		for _, configApp := range config.Applications {
-			// Check if this is the original app to remove
+			// Check if this is the original app to remove - use a more robust matching
+			// Normalize monitor names for comparison
+			configMonitor := strings.TrimSpace(configApp.MonitorName)
+			compareMonitor := strings.TrimSpace(deviceName)
+
+			// Empty string and Primary Monitor are equivalent
+			if configMonitor == "Primary Monitor" {
+				configMonitor = ""
+			}
+			if compareMonitor == "Primary Monitor" {
+				compareMonitor = ""
+			}
+
+			// Match by process name and resolution (most reliable identifiers)
 			isOriginal := configApp.ProcessName == originalApp.ProcessName &&
-				configApp.MonitorName == deviceName &&
 				configApp.Resolution.Width == originalApp.Resolution.Width &&
 				configApp.Resolution.Height == originalApp.Resolution.Height &&
 				configApp.Resolution.Frequency == originalApp.Resolution.Frequency
 
-			log.Println("SAVE: isOriginal", isOriginal)
-			log.Println("SAVE: configApp", configApp)
-			log.Println("SAVE: originalApp", originalApp)
-			log.Println("SAVE: deviceName", deviceName)
+			// If monitor names are specified, also match by monitor
+			if configMonitor != "" || compareMonitor != "" {
+				isOriginal = isOriginal && configMonitor == compareMonitor
+			}
 
 			// Keep all apps that are NOT the original
 			if !isOriginal {

@@ -36,7 +36,24 @@ func (g *GUIApp) parseAppInfo(appInfo string) (AppConfig, error) {
 	}
 
 	resolutionStr := remainder[:firstOpenParen]
-	monitorStr := strings.TrimSuffix(remainder[firstOpenParen+2:], ")")
+	// Find the matching closing parenthesis
+	openCount := 1
+	closeParenPos := -1
+	for i := firstOpenParen + 2; i < len(remainder); i++ {
+		if remainder[i] == '(' {
+			openCount++
+		} else if remainder[i] == ')' {
+			openCount--
+			if openCount == 0 {
+				closeParenPos = i
+				break
+			}
+		}
+	}
+	if closeParenPos == -1 {
+		return AppConfig{}, fmt.Errorf("invalid monitor format - missing closing parenthesis")
+	}
+	monitorStr := remainder[firstOpenParen+2 : closeParenPos]
 
 	// Find restore resolution if present
 	var restoreResolution *Resolution
@@ -61,17 +78,19 @@ func (g *GUIApp) parseAppInfo(appInfo string) (AppConfig, error) {
 	}
 
 	// Use the stored device name if we have it, otherwise convert from display name
+	var monitorName string
 	if deviceName != "" {
-		return AppConfig{
-			ProcessName:       processName,
-			Resolution:        resolution,
-			MonitorName:       deviceName,
-			RestoreResolution: restoreResolution,
-		}, nil
+		monitorName = strings.TrimSpace(deviceName)
+	} else {
+		// Fallback to converting display name if no stored device name
+		monitorName = strings.TrimSpace(g.getDeviceNameFromDisplayName(monitorStr))
 	}
 
-	// Fallback to converting display name if no stored device name
-	monitorName := g.getDeviceNameFromDisplayName(monitorStr)
+	// Empty string and Primary Monitor are equivalent
+	if monitorName == "Primary Monitor" {
+		monitorName = ""
+	}
+
 	return AppConfig{
 		ProcessName:       processName,
 		Resolution:        resolution,
@@ -124,11 +143,6 @@ func (g *GUIApp) getDeviceNameFromDisplayName(displayName string) string {
 		return "" // Empty string represents primary monitor
 	}
 
-	// First, strip off any resolution info if present (after " - ")
-	if idx := strings.LastIndex(displayName, " - "); idx != -1 {
-		displayName = displayName[:idx]
-	}
-
 	// Create a temporary display manager to get monitor information
 	displayManager := NewDisplayManager()
 
@@ -136,6 +150,17 @@ func (g *GUIApp) getDeviceNameFromDisplayName(displayName string) string {
 	monitors, err := displayManager.GetAvailableMonitors()
 	if err != nil {
 		return displayName // Fallback to display name if we can't get monitor info
+	}
+
+	// Clean up the display name for comparison
+	cleanDisplayName := displayName
+	// Remove resolution info if present
+	if idx := strings.LastIndex(cleanDisplayName, " - "); idx != -1 {
+		cleanDisplayName = cleanDisplayName[:idx]
+	}
+	// Remove index if present
+	if idx := strings.LastIndex(cleanDisplayName, " ["); idx != -1 {
+		cleanDisplayName = cleanDisplayName[:idx]
 	}
 
 	// Find the monitor that matches this display name
@@ -148,28 +173,15 @@ func (g *GUIApp) getDeviceNameFromDisplayName(displayName string) string {
 			}
 
 			// Check if this matches our target display name
-			if testDisplayName == displayName {
+			if testDisplayName == cleanDisplayName {
 				return monitor.DeviceName
 			}
 		}
 	}
 
-	// If no exact match found, try matching without the index number
-	if idx := strings.LastIndex(displayName, " ["); idx != -1 {
-		displayNameWithoutIndex := displayName[:idx]
-		for _, monitor := range monitors {
-			if monitor.DeviceName != "" {
-				testDisplayName := monitor.DeviceString
-				if monitor.IsPrimary {
-					testDisplayName += " (Primary)"
-				}
-				if testDisplayName == displayNameWithoutIndex {
-					return monitor.DeviceName
-				}
-			}
-		}
+	// If still no match found, return empty string for "Primary Monitor" or the device name as fallback
+	if cleanDisplayName == "Primary Monitor" {
+		return ""
 	}
-
-	// If still no match found, return the display name as fallback
 	return displayName
 }
