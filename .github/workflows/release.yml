@@ -61,6 +61,12 @@ jobs:
           Move-Item "csres.exe" "CS Resolution Monitor.exe"
           echo "Renamed compressed file to final name"
 
+      - name: Create zip file
+        run: |
+          # Create a zip file with the executable and config example
+          Compress-Archive -Path "CS Resolution Monitor.exe", "config.example.json" -DestinationPath "CS Resolution Monitor.zip" -Force
+          echo "Created zip file with executable and config"
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -122,8 +128,7 @@ jobs:
 
             **Full Changelog**: https://github.com/${{ github.repository }}/commits/main
           files: |
-            CS Resolution Monitor.exe
+            CS Resolution Monitor.zip
             config.example.json
-            CS Resolution Monitor.exe.zip
           draft: false
           prerelease: false
