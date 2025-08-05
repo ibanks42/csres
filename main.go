@@ -168,7 +168,7 @@ func (rm *ResolutionMonitor) checkRunningApps() error {
 	for processName := range rm.activeApps {
 		if _, exists := runningApps[processName]; !exists {
 			log.Printf("Application stopped: %s", processName)
-			if err := rm.handleAppStop(processName); err != nil {
+			if err := rm.handleAppStop(processName, runningApps); err != nil {
 				log.Printf("Error handling app stop for %s: %v", processName, err)
 			}
 		}
@@ -208,7 +208,7 @@ func (rm *ResolutionMonitor) handleAppStart(processName string, appConfig AppCon
 }
 
 // handleAppStop restores original resolution when monitored applications stop
-func (rm *ResolutionMonitor) handleAppStop(processName string) error {
+func (rm *ResolutionMonitor) handleAppStop(processName string, runningApps map[string]AppConfig) error {
 	// Find which monitor this app was using
 	var appMonitorName string
 	for _, app := range rm.config.Applications {
@@ -220,8 +220,8 @@ func (rm *ResolutionMonitor) handleAppStop(processName string) error {
 
 	// Check if any other apps are still using the same monitor
 	monitorStillInUse := false
-	for _, activeApp := range rm.activeApps {
-		if activeApp.MonitorName == appMonitorName && activeApp.ProcessName != processName {
+	for _, activeApp := range runningApps {
+		if activeApp.MonitorName == appMonitorName {
 			monitorStillInUse = true
 			break
 		}
@@ -256,7 +256,11 @@ func (rm *ResolutionMonitor) handleAppStop(processName string) error {
 
 			delete(rm.currentAppRes, appMonitorName)
 			log.Printf("Original resolution restored on %s", monitorDesc)
+		} else {
+			log.Printf("Resolution on monitor %s is already at the original setting.", appMonitorName)
 		}
+	} else {
+		log.Printf("Not restoring resolution for monitor %s because it is still in use.", appMonitorName)
 	}
 
 	return nil

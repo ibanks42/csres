@@ -187,7 +187,7 @@ func (dm *DisplayManager) GetCurrentResolutionForMonitor(monitorName string) (*R
 
 // IsModeSupported checks if a given resolution mode is supported by the monitor
 func (dm *DisplayManager) IsModeSupported(targetResolution Resolution, monitorName string) bool {
-	devMode := new(DEVMODE)
+	var devMode DEVMODE
 	var deviceNamePtr uintptr
 	if monitorName != "" {
 		deviceNameUTF16, err := syscall.UTF16PtrFromString(monitorName)
@@ -199,24 +199,32 @@ func (dm *DisplayManager) IsModeSupported(targetResolution Resolution, monitorNa
 
 	// Enumerate all modes and check if our target resolution exists
 	for i := uint32(0); ; i++ {
+		devMode = DEVMODE{}
+		devMode.DmSize = uint16(unsafe.Sizeof(devMode))
+
 		ret, _, _ := dm.procEnumDisplaySettingsW.Call(
 			deviceNamePtr,
 			uintptr(i),
-			uintptr(unsafe.Pointer(devMode)),
+			uintptr(unsafe.Pointer(&devMode)),
 		)
 
 		if ret == 0 {
 			break // No more modes
 		}
 
+		// Log each mode found for debugging purposes
+		// log.Printf("Available mode: %dx%d@%dHz", devMode.DmPelsWidth, devMode.DmPelsHeight, devMode.DmDisplayFrequency)
+
 		// Check if this mode matches our target resolution
 		if devMode.DmPelsWidth == targetResolution.Width &&
 			devMode.DmPelsHeight == targetResolution.Height &&
 			(targetResolution.Frequency == 0 || devMode.DmDisplayFrequency == targetResolution.Frequency) {
+			// log.Printf("Found matching mode for %dx%d@%dHz on monitor %s", targetResolution.Width, targetResolution.Height, targetResolution.Frequency, monitorName)
 			return true
 		}
 	}
 
+	// log.Printf("No matching mode found for %dx%d@%dHz on monitor %s", targetResolution.Width, targetResolution.Height, targetResolution.Frequency, monitorName)
 	return false
 }
 
@@ -228,14 +236,6 @@ func (dm *DisplayManager) ChangeResolution(resolution Resolution) error {
 // ChangeResolutionForMonitor changes the display resolution for a specific monitor
 func (dm *DisplayManager) ChangeResolutionForMonitor(resolution Resolution, monitorName string) error {
 	log.Printf("Attempting to change resolution on %s", monitorName)
-
-	// First verify the mode is supported
-	if !dm.IsModeSupported(resolution, monitorName) {
-		log.Printf("Resolution %dx%d@%dHz is not supported on %s", resolution.Width, resolution.Height, resolution.Frequency, monitorName)
-		return fmt.Errorf("resolution %dx%d@%dHz is not supported by monitor %s",
-			resolution.Width, resolution.Height, resolution.Frequency,
-			monitorName)
-	}
 
 	// Get current monitor state to verify it's active
 	var displayDevice DISPLAY_DEVICE
@@ -287,13 +287,12 @@ func (dm *DisplayManager) ChangeResolutionForMonitor(resolution Resolution, moni
 		return fmt.Errorf("failed to get current display settings for primary monitor")
 	}
 
-	// Modify the resolution
-	newMode := *devMode
+	// Create a fresh DEVMODE structure to avoid potential field conflicts
+	newMode := DEVMODE{}
+	newMode.DmSize = uint16(unsafe.Sizeof(newMode))
 	newMode.DmPelsWidth = resolution.Width
 	newMode.DmPelsHeight = resolution.Height
-
-	// Preserve existing DmFields and add our modifications
-	newMode.DmFields |= DM_PELSWIDTH | DM_PELSHEIGHT
+	newMode.DmFields = DM_PELSWIDTH | DM_PELSHEIGHT
 
 	// Set frequency if specified
 	if resolution.Frequency > 0 {
@@ -301,10 +300,14 @@ func (dm *DisplayManager) ChangeResolutionForMonitor(resolution Resolution, moni
 		newMode.DmFields |= DM_DISPLAYFREQUENCY
 	}
 
-	// Ensure the structure size is set correctly
-	newMode.DmSize = uint16(unsafe.Sizeof(newMode))
+	// Debug logging
+	// log.Printf("Current mode: %dx%d@%dHz (Fields: 0x%x)", devMode.DmPelsWidth, devMode.DmPelsHeight, devMode.DmDisplayFrequency, devMode.DmFields)
+	// log.Printf("Target mode: %dx%d@%dHz (Fields: 0x%x)", newMode.DmPelsWidth, newMode.DmPelsHeight, newMode.DmDisplayFrequency, newMode.DmFields)
 
 	monitorDesc := "primary monitor"
+
+	// Add a small delay to allow the display driver to settle after previous resolution changes
+	time.Sleep(100 * time.Millisecond)
 
 	// Apply the changes with retry logic
 	maxRetries := 3
@@ -312,8 +315,8 @@ func (dm *DisplayManager) ChangeResolutionForMonitor(resolution Resolution, moni
 
 	for retry := 0; retry < maxRetries; retry++ {
 		if retry > 0 {
-			// Small delay between retries
-			time.Sleep(500 * time.Millisecond)
+			// Longer delay between retries for resolution restoration
+			time.Sleep(1000 * time.Millisecond)
 		}
 
 		// Apply the changes
