@@ -38,13 +38,13 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart('v')
           Write-Host "Building with version: $version"
           # Package the application with Fyne using semantic versioning
-          fyne package -os windows -icon icon.png -name "CS Resolution Monitor" --app-version $version --app-build ${{ github.run_number }}
+          fyne package -os windows -icon icon.png -name csres --app-version $version --app-build ${{ github.run_number }}
           echo "Built and packaged application with Fyne successfully"
 
       - name: Test build
         run: |
           # Test version output
-          ./"CS Resolution Monitor.exe" --version
+          ./csres.exe --version
           echo "Application built and version check successful"
 
       - name: Compress with UPX
@@ -52,8 +52,14 @@ jobs:
         with:
           version: latest
           files: |
-            "./CS Resolution Monitor.exe"
+            ./csres.exe
           args: -fq
+
+      - name: Rename to final name
+        run: |
+          # Rename the compressed file to the final name
+          Move-Item "csres.exe" "CS Resolution Monitor.exe"
+          echo "Renamed compressed file to final name"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
