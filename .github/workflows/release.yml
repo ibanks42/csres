@@ -38,14 +38,22 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart('v')
           Write-Host "Building with version: $version"
           # Package the application with Fyne using semantic versioning
-          fyne package -os windows -icon icon.png -name csres --app-version $version --app-build ${{ github.run_number }}
+          fyne package -os windows -icon icon.png -name "CS Resolution Monitor" --app-version $version --app-build ${{ github.run_number }}
           echo "Built and packaged application with Fyne successfully"
 
       - name: Test build
         run: |
           # Test version output
-          ./csres.exe --version
+          ./"CS Resolution Monitor.exe" --version
           echo "Application built and version check successful"
+
+      - name: Compress with UPX
+        uses: crazy-max/ghaction-upx@v3
+        with:
+          version: latest
+          files: |
+            ./"CS Resolution Monitor.exe"
+          args: -fq
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -57,19 +65,29 @@ jobs:
 
             Automatically built from commit ${{ github.sha }}
 
-            ### Features
+            ### 🎯 What's New in This Release
+
+            **Enhanced Multi-Monitor Support**
+            - Improved resolution selection logic in GUI
+            - Better monitor name detection via WMI
+            - Enhanced configuration and GUI for resolution management
+            - Fixed resolution restoration after game closes
+
+            **Core Features**
             - **Multi-Monitor Support**: Target specific monitors for resolution changes
             - **Auto Resolution Switching**: Changes resolution when Counter-Strike 2 or other configured apps start
             - **Live Config Reload**: Update settings without restarting the application
             - **Graceful Restoration**: Restores original resolution when applications close
+            - **Process Monitoring**: Continuously monitors for target applications
+            - **Multiple Application Support**: Can monitor multiple applications simultaneously
 
-            ### Installation
-            1. Download `csres.exe` from the assets below
+            ### 🚀 Installation
+            1. Download `CS Resolution Monitor.exe` from the assets below
             2. Run the application to generate a default `config.json`
             3. Edit the configuration to add your applications and target resolutions
             4. Run again to start monitoring
 
-            ### Configuration Example
+            ### ⚙️ Configuration Example
             ```json
             {
               "default_resolution": {"width": 1920, "height": 1080, "frequency": 144},
@@ -85,10 +103,21 @@ jobs:
             }
             ```
 
+            ### 🔧 How It Works
+            1. **Monitor Detection**: Enumerates available monitors and their current resolutions
+            2. **Process Monitoring**: Continuously scans running processes every `poll_interval` seconds
+            3. **Resolution Changes**: When a monitored application starts, changes the specified monitor to its configured resolution
+            4. **Per-Monitor Tracking**: Tracks resolution changes per monitor, allowing different apps on different monitors
+            5. **Restoration**: When applications close, restores the default resolution only on monitors that were changed
+
+            ### 📋 System Requirements
+            - Windows 10/11
+            - Administrator privileges may be required for resolution changes
+
             **Full Changelog**: https://github.com/${{ github.repository }}/commits/main
           files: |
-            csres.exe
+            "CS Resolution Monitor.exe"
             config.example.json
-            csres.exe.zip
+            "CS Resolution Monitor.exe.zip"
           draft: false
           prerelease: false
