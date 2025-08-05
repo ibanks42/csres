@@ -25,6 +25,7 @@ type GUIApp struct {
 	app                      fyne.App
 	mainWindow               fyne.Window
 	resMonitor               *ResolutionMonitor
+	displayManager           *DisplayManager
 	configPath               string
 	ctx                      context.Context
 	cancel                   context.CancelFunc
@@ -47,12 +48,13 @@ func NewGUIApp(configPath string) *GUIApp {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	gui := &GUIApp{
-		app:        fyneApp,
-		configPath: configPath,
-		ctx:        ctx,
-		cancel:     cancel,
-		appData:    binding.NewStringList(),
-		isRunning:  false,
+		app:            fyneApp,
+		configPath:     configPath,
+		ctx:            ctx,
+		cancel:         cancel,
+		appData:        binding.NewStringList(),
+		isRunning:      false,
+		displayManager: NewDisplayManager(),
 	}
 
 	return gui
@@ -311,12 +313,20 @@ func (g *GUIApp) updateAppList(config *Config) {
 		monitor := g.getMonitorDisplayName(app.MonitorName)
 
 		// Store the device name in the UI string (hidden) after a null byte so it won't be visible
-		appInfo := fmt.Sprintf("%s - %dx%d@%dHz (%s)\x00%s",
+		restoreInfo := "default"
+		if app.RestoreResolution != nil {
+			restoreInfo = fmt.Sprintf("%dx%d@%dHz",
+				app.RestoreResolution.Width,
+				app.RestoreResolution.Height,
+				app.RestoreResolution.Frequency)
+		}
+		appInfo := fmt.Sprintf("%s - %dx%d@%dHz (%s) [Restore: %s]\x00%s",
 			app.ProcessName,
 			app.Resolution.Width,
 			app.Resolution.Height,
 			app.Resolution.Frequency,
 			monitor,
+			restoreInfo,
 			app.MonitorName)
 
 		g.appData.Append(appInfo)
@@ -421,29 +431,78 @@ func (g *GUIApp) showAppDialog(app AppConfig, isEdit bool) {
 		processEntry.SetText(app.ProcessName)
 	}
 
-	widthEntry := widget.NewEntry()
-	widthEntry.SetPlaceHolder("1920")
-	if app.Resolution.Width > 0 {
-		widthEntry.SetText(fmt.Sprintf("%d", app.Resolution.Width))
-	}
-
-	heightEntry := widget.NewEntry()
-	heightEntry.SetPlaceHolder("1080")
-	if app.Resolution.Height > 0 {
-		heightEntry.SetText(fmt.Sprintf("%d", app.Resolution.Height))
-	}
-
-	freqEntry := widget.NewEntry()
-	freqEntry.SetPlaceHolder("144")
-	if app.Resolution.Frequency > 0 {
-		freqEntry.SetText(fmt.Sprintf("%d", app.Resolution.Frequency))
-	}
-
 	// Create monitor dropdown
 	monitorOptions, monitorMap := g.getMonitorOptions()
 	monitorSelect := widget.NewSelect(monitorOptions, nil)
 
-	// Set initial selection
+	// Create resolution dropdown
+	var resolutionOptions []string
+	resolutionMap := make(map[string]Resolution)
+	resolutionSelect := widget.NewSelect(resolutionOptions, nil)
+
+	// Create restore resolution dropdown
+	var restoreResolutionOptions []string
+	restoreResolutionMap := make(map[string]Resolution)
+	restoreResolutionSelect := widget.NewSelect(restoreResolutionOptions, nil)
+
+	// Function to update resolution options based on selected monitor
+	updateResolutionOptions := func(monitorName string) {
+		resolutions, err := g.displayManager.GetAvailableResolutions(monitorName)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("failed to get available resolutions: %v", err), g.mainWindow)
+			return
+		}
+
+		// Clear existing options
+		resolutionOptions = nil
+		resolutionMap = make(map[string]Resolution)
+		restoreResolutionOptions = nil
+		restoreResolutionMap = make(map[string]Resolution)
+
+		// Add "Current Resolution" option for restore
+		if currentRes, err := g.displayManager.GetCurrentResolutionForMonitor(monitorName); err == nil {
+			restoreResolutionStr := fmt.Sprintf("Current (%dx%d@%dHz)", currentRes.Width, currentRes.Height, currentRes.Frequency)
+			restoreResolutionOptions = append(restoreResolutionOptions, restoreResolutionStr)
+			restoreResolutionMap[restoreResolutionStr] = *currentRes
+		}
+
+		// Add available resolutions in reverse order (typically higher resolutions first)
+		for i := len(resolutions) - 1; i >= 0; i-- {
+			res := resolutions[i]
+			resStr := fmt.Sprintf("%dx%d@%dHz", res.Width, res.Height, res.Frequency)
+			resolutionOptions = append(resolutionOptions, resStr)
+			resolutionMap[resStr] = res
+
+			// Also add to restore options
+			restoreResolutionOptions = append(restoreResolutionOptions, resStr)
+			restoreResolutionMap[resStr] = res
+		}
+
+		resolutionSelect.Options = resolutionOptions
+		restoreResolutionSelect.Options = restoreResolutionOptions
+
+		// Set initial selections
+		if app.Resolution.Width > 0 {
+			targetResStr := fmt.Sprintf("%dx%d@%dHz", app.Resolution.Width, app.Resolution.Height, app.Resolution.Frequency)
+			resolutionSelect.SetSelected(targetResStr)
+		} else if len(resolutionOptions) > 0 {
+			resolutionSelect.SetSelected(resolutionOptions[0])
+		}
+
+		if app.RestoreResolution != nil {
+			targetResStr := fmt.Sprintf("%dx%d@%dHz", app.RestoreResolution.Width, app.RestoreResolution.Height, app.RestoreResolution.Frequency)
+			restoreResolutionSelect.SetSelected(targetResStr)
+		} else if len(restoreResolutionOptions) > 0 {
+			restoreResolutionSelect.SetSelected(restoreResolutionOptions[0])
+		}
+	}
+
+	// Set up monitor selection callback
+	monitorSelect.OnChanged = func(selected string) {
+		updateResolutionOptions(monitorMap[selected])
+	}
+
+	// Set initial monitor selection
 	if app.MonitorName == "" {
 		monitorSelect.SetSelected("Primary Monitor")
 	} else {
@@ -471,14 +530,16 @@ func (g *GUIApp) showAppDialog(app AppConfig, isEdit bool) {
 		}
 	}
 
+	// Initial resolution options update
+	updateResolutionOptions(monitorMap[monitorSelect.Selected])
+
 	// Create form
 	form := &widget.Form{
 		Items: []*widget.FormItem{
 			{Text: "Process Name:", Widget: processEntry},
-			{Text: "Width:", Widget: widthEntry},
-			{Text: "Height:", Widget: heightEntry},
-			{Text: "Refresh Rate (Hz):", Widget: freqEntry},
 			{Text: "Monitor:", Widget: monitorSelect},
+			{Text: "Target Resolution:", Widget: resolutionSelect},
+			{Text: "Restore Resolution:", Widget: restoreResolutionSelect},
 		},
 	}
 
@@ -486,10 +547,13 @@ func (g *GUIApp) showAppDialog(app AppConfig, isEdit bool) {
 	d := dialog.NewCustomConfirm(title, "Save", "Cancel", form, func(confirmed bool) {
 		if confirmed {
 			selectedMonitor := monitorMap[monitorSelect.Selected]
+			selectedResolution := resolutionMap[resolutionSelect.Selected]
+			selectedRestoreResolution := restoreResolutionMap[restoreResolutionSelect.Selected]
+
 			if isEdit {
-				g.saveApplication(processEntry.Text, widthEntry.Text, heightEntry.Text, freqEntry.Text, selectedMonitor, originalApp)
+				g.saveApplication(processEntry.Text, selectedResolution, selectedRestoreResolution, selectedMonitor, originalApp)
 			} else {
-				g.saveApplication(processEntry.Text, widthEntry.Text, heightEntry.Text, freqEntry.Text, selectedMonitor, nil)
+				g.saveApplication(processEntry.Text, selectedResolution, selectedRestoreResolution, selectedMonitor, nil)
 			}
 		}
 	}, g.mainWindow)
@@ -499,32 +563,11 @@ func (g *GUIApp) showAppDialog(app AppConfig, isEdit bool) {
 }
 
 // saveApplication saves a new or edited application configuration
-func (g *GUIApp) saveApplication(process, width, height, freq, monitor string, originalApp *AppConfig) {
+func (g *GUIApp) saveApplication(process string, resolution, restoreResolution Resolution, monitor string, originalApp *AppConfig) {
 	// Validate inputs
 	if process == "" {
 		dialog.ShowError(fmt.Errorf("process name is required"), g.mainWindow)
 		return
-	}
-
-	w, err := strconv.ParseUint(width, 10, 32)
-	if err != nil || w == 0 {
-		dialog.ShowError(fmt.Errorf("invalid width"), g.mainWindow)
-		return
-	}
-
-	h, err := strconv.ParseUint(height, 10, 32)
-	if err != nil || h == 0 {
-		dialog.ShowError(fmt.Errorf("invalid height"), g.mainWindow)
-		return
-	}
-
-	f := uint64(60) // default frequency
-	if freq != "" {
-		f, err = strconv.ParseUint(freq, 10, 32)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("invalid refresh rate"), g.mainWindow)
-			return
-		}
 	}
 
 	// Load current config
@@ -536,13 +579,10 @@ func (g *GUIApp) saveApplication(process, width, height, freq, monitor string, o
 
 	// Create new app config
 	newApp := AppConfig{
-		ProcessName: process,
-		Resolution: Resolution{
-			Width:     uint32(w),
-			Height:    uint32(h),
-			Frequency: uint32(f),
-		},
-		MonitorName: monitor,
+		ProcessName:       process,
+		Resolution:        resolution,
+		MonitorName:       monitor,
+		RestoreResolution: &restoreResolution,
 	}
 
 	// If editing, remove the original entry first
@@ -699,7 +739,7 @@ func (g *GUIApp) stopMonitoring() {
 			}
 
 			log.Printf("GUI: Restoring original resolution on %s...", monitorDesc)
-			if err := g.resMonitor.displayManager.ChangeResolutionForMonitor(*originalRes, monitorName); err != nil {
+			if err := g.resMonitor.displayManager.SetResolution(monitorName, *originalRes); err != nil {
 				log.Printf("Error restoring resolution on %s: %v", monitorDesc, err)
 			}
 		}

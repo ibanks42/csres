@@ -196,7 +196,7 @@ func (rm *ResolutionMonitor) handleAppStart(processName string, appConfig AppCon
 		log.Printf("Changing resolution to %dx%d@%dHz on %s for %s",
 			appConfig.Resolution.Width, appConfig.Resolution.Height, appConfig.Resolution.Frequency, monitorDesc, processName)
 
-		if err := rm.displayManager.ChangeResolutionForMonitor(appConfig.Resolution, monitorName); err != nil {
+		if err := rm.displayManager.SetResolution(monitorName, appConfig.Resolution); err != nil {
 			return err
 		}
 
@@ -250,7 +250,7 @@ func (rm *ResolutionMonitor) handleAppStop(processName string, runningApps map[s
 			log.Printf("Restoring original resolution: %dx%d@%dHz on %s",
 				originalRes.Width, originalRes.Height, originalRes.Frequency, monitorDesc)
 
-			if err := rm.displayManager.ChangeResolutionForMonitor(*originalRes, appMonitorName); err != nil {
+			if err := rm.displayManager.SetResolution(appMonitorName, *originalRes); err != nil {
 				return err
 			}
 
@@ -284,7 +284,7 @@ func (rm *ResolutionMonitor) shutdown() error {
 		}
 
 		log.Printf("Restoring original resolution on %s before exit...", monitorDesc)
-		if err := rm.displayManager.ChangeResolutionForMonitor(*originalRes, monitorName); err != nil {
+		if err := rm.displayManager.SetResolution(monitorName, *originalRes); err != nil {
 			log.Printf("Error restoring resolution on %s: %v", monitorDesc, err)
 		}
 	}

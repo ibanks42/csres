@@ -4,69 +4,44 @@ import (
 	"fmt"
 	"log"
 	"syscall"
-	"time"
 	"unsafe"
 )
 
-const (
-	ENUM_CURRENT_SETTINGS   = 0xFFFFFFFF
-	DISP_CHANGE_SUCCESSFUL  = 0
-	DISP_CHANGE_RESTART     = 1
-	DISP_CHANGE_FAILED      = 0xFFFFFFFF
-	DISP_CHANGE_BADMODE     = 0xFFFFFFFE
-	DISP_CHANGE_NOTUPDATED  = 0xFFFFFFFD
-	DISP_CHANGE_BADFLAGS    = 0xFFFFFFFC
-	DISP_CHANGE_BADPARAM    = 0xFFFFFFFB
-	DISP_CHANGE_BADDUALVIEW = 0xFFFFFFFA
-
-	DM_PELSWIDTH        = 0x00080000
-	DM_PELSHEIGHT       = 0x00100000
-	DM_DISPLAYFREQUENCY = 0x00400000
-
-	DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x00000001
-	DISPLAY_DEVICE_PRIMARY_DEVICE      = 0x00000004
-	DISPLAY_DEVICE_ACTIVE              = 0x00000002
-)
-
-// DEVMODE represents a display settings structure
+// DEVMODE represents the Win32 DEVMODE structure
 type DEVMODE struct {
-	DmDeviceName       [32]uint16
-	DmSpecVersion      uint16
-	DmDriverVersion    uint16
-	DmSize             uint16
-	DmDriverExtra      uint16
-	DmFields           uint32
-	DmOrientation      int16
-	DmPaperSize        int16
-	DmPaperLength      int16
-	DmPaperWidth       int16
-	DmScale            int16
-	DmCopies           int16
-	DmDefaultSource    int16
-	DmPrintQuality     int16
-	DmColor            int16
-	DmDuplex           int16
-	DmYResolution      int16
-	DmTTOption         int16
-	DmCollate          int16
-	DmFormName         [32]uint16
-	DmUnusedPadding    uint16
-	DmBitsPerPel       uint32
-	DmPelsWidth        uint32
-	DmPelsHeight       uint32
-	DmDisplayFlags     uint32
-	DmDisplayFrequency uint32
-	DmICMMethod        uint32
-	DmICMIntent        uint32
-	DmMediaType        uint32
-	DmDitherType       uint32
-	DmReserved1        uint32
-	DmReserved2        uint32
-	DmPanningWidth     uint32
-	DmPanningHeight    uint32
+	DeviceName       [32]uint16
+	SpecVersion      uint16
+	DriverVersion    uint16
+	Size             uint16
+	DriverExtra      uint16
+	Fields           uint32
+	X                int32
+	Y                int32
+	Orientation      uint32
+	FixedOutput      uint32
+	Color            int16
+	Duplex           int16
+	YResolution      int16
+	TTOption         int16
+	Collate          int16
+	FormName         [32]uint16
+	LogPixels        uint16
+	BitsPerPel       uint32
+	PelsWidth        uint32
+	PelsHeight       uint32
+	DisplayFlags     uint32
+	DisplayFrequency uint32
+	ICMMethod        uint32
+	ICMIntent        uint32
+	MediaType        uint32
+	DitherType       uint32
+	Reserved1        uint32
+	Reserved2        uint32
+	PanningWidth     uint32
+	PanningHeight    uint32
 }
 
-// DISPLAY_DEVICE represents information about a display device
+// DISPLAY_DEVICE represents the Win32 DISPLAY_DEVICE structure
 type DISPLAY_DEVICE struct {
 	Cb           uint32
 	DeviceName   [32]uint16
@@ -76,6 +51,16 @@ type DISPLAY_DEVICE struct {
 	DeviceKey    [128]uint16
 }
 
+const (
+	ENUM_CURRENT_SETTINGS  = 0xFFFFFFFF
+	ENUM_REGISTRY_SETTINGS = 0xFFFFFFFE
+
+	// Display device state flags
+	DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x00000001
+	DISPLAY_DEVICE_PRIMARY_DEVICE      = 0x00000004
+	DISPLAY_DEVICE_ACTIVE              = 0x00000001
+)
+
 // MonitorInfo represents information about a monitor
 type MonitorInfo struct {
 	DeviceName   string
@@ -83,24 +68,22 @@ type MonitorInfo struct {
 	IsPrimary    bool
 }
 
-// DisplayManager handles display resolution changes
+// DisplayManager manages display settings
 type DisplayManager struct {
-	user32dll                    *syscall.LazyDLL
-	procEnumDisplaySettingsW     *syscall.LazyProc
-	procChangeDisplaySettingsW   *syscall.LazyProc
-	procChangeDisplaySettingsExW *syscall.LazyProc
-	procEnumDisplayDevicesW      *syscall.LazyProc
+	user32                       *syscall.DLL
+	procEnumDisplayDevicesW      *syscall.Proc
+	procEnumDisplaySettingsW     *syscall.Proc
+	procChangeDisplaySettingsExW *syscall.Proc
 }
 
 // NewDisplayManager creates a new DisplayManager instance
 func NewDisplayManager() *DisplayManager {
-	user32dll := syscall.NewLazyDLL("user32.dll")
+	user32 := syscall.MustLoadDLL("user32.dll")
 	return &DisplayManager{
-		user32dll:                    user32dll,
-		procEnumDisplaySettingsW:     user32dll.NewProc("EnumDisplaySettingsW"),
-		procChangeDisplaySettingsW:   user32dll.NewProc("ChangeDisplaySettingsW"),
-		procChangeDisplaySettingsExW: user32dll.NewProc("ChangeDisplaySettingsExW"),
-		procEnumDisplayDevicesW:      user32dll.NewProc("EnumDisplayDevicesW"),
+		user32:                       user32,
+		procEnumDisplayDevicesW:      user32.MustFindProc("EnumDisplayDevicesW"),
+		procEnumDisplaySettingsW:     user32.MustFindProc("EnumDisplaySettingsW"),
+		procChangeDisplaySettingsExW: user32.MustFindProc("ChangeDisplaySettingsExW"),
 	}
 }
 
@@ -154,57 +137,60 @@ func (dm *DisplayManager) GetCurrentResolution() (*Resolution, error) {
 
 // GetCurrentResolutionForMonitor retrieves the current display resolution for a specific monitor
 func (dm *DisplayManager) GetCurrentResolutionForMonitor(monitorName string) (*Resolution, error) {
-	devMode := new(DEVMODE)
+	var devMode DEVMODE
+	devMode.Size = uint16(unsafe.Sizeof(devMode))
 
-	var deviceNamePtr uintptr
+	// Convert monitorName to UTF16 pointer
+	var monitorNamePtr *uint16
 	if monitorName != "" {
-		deviceNameUTF16, err := syscall.UTF16PtrFromString(monitorName)
+		monitorNameUtf16, err := syscall.UTF16PtrFromString(monitorName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert monitor name to UTF16: %w", err)
 		}
-		deviceNamePtr = uintptr(unsafe.Pointer(deviceNameUTF16))
+		monitorNamePtr = monitorNameUtf16
 	}
 
-	ret, _, _ := dm.procEnumDisplaySettingsW.Call(
-		deviceNamePtr,
+	ret, _, err := dm.procEnumDisplaySettingsW.Call(
+		uintptr(unsafe.Pointer(monitorNamePtr)),
 		uintptr(ENUM_CURRENT_SETTINGS),
-		uintptr(unsafe.Pointer(devMode)),
+		uintptr(unsafe.Pointer(&devMode)),
 	)
 
 	if ret == 0 {
-		if monitorName != "" {
-			return nil, fmt.Errorf("failed to get current display settings for monitor %s", monitorName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get display settings: %w", err)
 		}
-		return nil, fmt.Errorf("failed to get current display settings for primary monitor")
+		return nil, fmt.Errorf("failed to get display settings")
 	}
 
 	return &Resolution{
-		Width:     devMode.DmPelsWidth,
-		Height:    devMode.DmPelsHeight,
-		Frequency: devMode.DmDisplayFrequency,
+		Width:     uint32(devMode.PelsWidth),
+		Height:    uint32(devMode.PelsHeight),
+		Frequency: uint32(devMode.DisplayFrequency),
 	}, nil
 }
 
-// IsModeSupported checks if a given resolution mode is supported by the monitor
-func (dm *DisplayManager) IsModeSupported(targetResolution Resolution, monitorName string) bool {
+// GetAvailableResolutions returns a list of available resolutions for a monitor
+func (dm *DisplayManager) GetAvailableResolutions(monitorName string) ([]Resolution, error) {
+	var resolutions []Resolution
 	var devMode DEVMODE
-	var deviceNamePtr uintptr
+	devMode.Size = uint16(unsafe.Sizeof(devMode))
+
+	// Convert monitorName to UTF16 pointer
+	var monitorNamePtr *uint16
 	if monitorName != "" {
-		deviceNameUTF16, err := syscall.UTF16PtrFromString(monitorName)
+		monitorNameUtf16, err := syscall.UTF16PtrFromString(monitorName)
 		if err != nil {
-			return false
+			return nil, fmt.Errorf("failed to convert monitor name to UTF16: %w", err)
 		}
-		deviceNamePtr = uintptr(unsafe.Pointer(deviceNameUTF16))
+		monitorNamePtr = monitorNameUtf16
 	}
 
-	// Enumerate all modes and check if our target resolution exists
-	for i := uint32(0); ; i++ {
-		devMode = DEVMODE{}
-		devMode.DmSize = uint16(unsafe.Sizeof(devMode))
-
+	// Enumerate all display settings
+	for modeNum := uint32(0); ; modeNum++ {
 		ret, _, _ := dm.procEnumDisplaySettingsW.Call(
-			deviceNamePtr,
-			uintptr(i),
+			uintptr(unsafe.Pointer(monitorNamePtr)),
+			uintptr(modeNum),
 			uintptr(unsafe.Pointer(&devMode)),
 		)
 
@@ -212,184 +198,69 @@ func (dm *DisplayManager) IsModeSupported(targetResolution Resolution, monitorNa
 			break // No more modes
 		}
 
-		// Log each mode found for debugging purposes
-		// log.Printf("Available mode: %dx%d@%dHz", devMode.DmPelsWidth, devMode.DmPelsHeight, devMode.DmDisplayFrequency)
+		resolution := Resolution{
+			Width:     uint32(devMode.PelsWidth),
+			Height:    uint32(devMode.PelsHeight),
+			Frequency: uint32(devMode.DisplayFrequency),
+		}
 
-		// Check if this mode matches our target resolution
-		if devMode.DmPelsWidth == targetResolution.Width &&
-			devMode.DmPelsHeight == targetResolution.Height &&
-			(targetResolution.Frequency == 0 || devMode.DmDisplayFrequency == targetResolution.Frequency) {
-			// log.Printf("Found matching mode for %dx%d@%dHz on monitor %s", targetResolution.Width, targetResolution.Height, targetResolution.Frequency, monitorName)
-			return true
+		// Check if this resolution is already in the list
+		isDuplicate := false
+		for _, r := range resolutions {
+			if r.Width == resolution.Width && r.Height == resolution.Height && r.Frequency == resolution.Frequency {
+				isDuplicate = true
+				break
+			}
+		}
+
+		if !isDuplicate {
+			resolutions = append(resolutions, resolution)
 		}
 	}
 
-	// log.Printf("No matching mode found for %dx%d@%dHz on monitor %s", targetResolution.Width, targetResolution.Height, targetResolution.Frequency, monitorName)
-	return false
+	return resolutions, nil
 }
 
-// ChangeResolution changes the display resolution for primary monitor
-func (dm *DisplayManager) ChangeResolution(resolution Resolution) error {
-	return dm.ChangeResolutionForMonitor(resolution, "")
-}
+// SetResolution changes the display resolution for a specific monitor
+func (dm *DisplayManager) SetResolution(monitorName string, resolution Resolution) error {
+	var devMode DEVMODE
+	devMode.Size = uint16(unsafe.Sizeof(devMode))
+	devMode.Fields = 0x00180000 // DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY
+	devMode.PelsWidth = uint32(resolution.Width)
+	devMode.PelsHeight = uint32(resolution.Height)
+	devMode.DisplayFrequency = uint32(resolution.Frequency)
 
-// ChangeResolutionForMonitor changes the display resolution for a specific monitor
-func (dm *DisplayManager) ChangeResolutionForMonitor(resolution Resolution, monitorName string) error {
-	log.Printf("Attempting to change resolution on %s", monitorName)
-
-	// Get current monitor state to verify it's active
-	var displayDevice DISPLAY_DEVICE
-	displayDevice.Cb = uint32(unsafe.Sizeof(displayDevice))
-
+	// Convert monitorName to UTF16 pointer
+	var monitorNamePtr *uint16
 	if monitorName != "" {
-		ret, _, _ := dm.procEnumDisplayDevicesW.Call(
-			uintptr(0),
-			uintptr(0),
-			uintptr(unsafe.Pointer(&displayDevice)),
-			uintptr(0),
-		)
-
-		if ret == 0 {
-			return fmt.Errorf("failed to get monitor state for %s", monitorName)
-		}
-
-		// Log monitor state for debugging
-		log.Printf("Checking monitor state for %s: Flags=0x%x", monitorName, displayDevice.StateFlags)
-
-		// Allow monitors that are either attached to desktop or active
-		if displayDevice.StateFlags&(DISPLAY_DEVICE_ATTACHED_TO_DESKTOP|DISPLAY_DEVICE_ACTIVE) == 0 {
-			return fmt.Errorf("monitor %s is neither active nor attached (flags=0x%x)", monitorName, displayDevice.StateFlags)
-		}
-	}
-
-	// Get current settings first
-	devMode := new(DEVMODE)
-
-	var deviceNamePtr uintptr
-	if monitorName != "" {
-		deviceNameUTF16, err := syscall.UTF16PtrFromString(monitorName)
+		monitorNameUtf16, err := syscall.UTF16PtrFromString(monitorName)
 		if err != nil {
 			return fmt.Errorf("failed to convert monitor name to UTF16: %w", err)
 		}
-		deviceNamePtr = uintptr(unsafe.Pointer(deviceNameUTF16))
+		monitorNamePtr = monitorNameUtf16
 	}
 
-	ret, _, _ := dm.procEnumDisplaySettingsW.Call(
-		deviceNamePtr,
-		uintptr(ENUM_CURRENT_SETTINGS),
-		uintptr(unsafe.Pointer(devMode)),
-	)
-
-	if ret == 0 {
-		if monitorName != "" {
-			return fmt.Errorf("failed to get current display settings for monitor %s", monitorName)
-		}
-		return fmt.Errorf("failed to get current display settings for primary monitor")
-	}
-
-	// Create a fresh DEVMODE structure to avoid potential field conflicts
-	newMode := DEVMODE{}
-	newMode.DmSize = uint16(unsafe.Sizeof(newMode))
-	newMode.DmPelsWidth = resolution.Width
-	newMode.DmPelsHeight = resolution.Height
-	newMode.DmFields = DM_PELSWIDTH | DM_PELSHEIGHT
-
-	// Set frequency if specified
-	if resolution.Frequency > 0 {
-		newMode.DmDisplayFrequency = resolution.Frequency
-		newMode.DmFields |= DM_DISPLAYFREQUENCY
-	}
-
-	// Debug logging
-	// log.Printf("Current mode: %dx%d@%dHz (Fields: 0x%x)", devMode.DmPelsWidth, devMode.DmPelsHeight, devMode.DmDisplayFrequency, devMode.DmFields)
-	// log.Printf("Target mode: %dx%d@%dHz (Fields: 0x%x)", newMode.DmPelsWidth, newMode.DmPelsHeight, newMode.DmDisplayFrequency, newMode.DmFields)
-
-	monitorDesc := "primary monitor"
-
-	// Add a small delay to allow the display driver to settle after previous resolution changes
-	time.Sleep(100 * time.Millisecond)
-
-	// Apply the changes with retry logic
-	maxRetries := 3
+	// Try to change the display settings
+	const maxRetries = 3
 	var lastError error
 
-	for retry := 0; retry < maxRetries; retry++ {
-		if retry > 0 {
-			// Longer delay between retries for resolution restoration
-			time.Sleep(1000 * time.Millisecond)
+	for i := 0; i < maxRetries; i++ {
+		ret, _, err := dm.procChangeDisplaySettingsExW.Call(
+			uintptr(unsafe.Pointer(monitorNamePtr)),
+			uintptr(unsafe.Pointer(&devMode)),
+			0,
+			0,
+			0,
+		)
+
+		if ret == 0 {
+			return nil // Success
 		}
 
-		// Apply the changes
-		if monitorName != "" {
-			// Use ChangeDisplaySettingsEx for specific monitors
-			monitorDesc = fmt.Sprintf("monitor %s", monitorName)
-			ret, _, err := dm.procChangeDisplaySettingsExW.Call(
-				deviceNamePtr,                     // Device name
-				uintptr(unsafe.Pointer(&newMode)), // DEVMODE
-				uintptr(0),                        // hwnd (not used)
-				uintptr(0),                        // dwflags
-				uintptr(0),                        // lParam (not used)
-			)
-
-			switch ret {
-			case uintptr(DISP_CHANGE_SUCCESSFUL):
-				return nil
-			case uintptr(DISP_CHANGE_RESTART):
-				lastError = fmt.Errorf("restart required to apply resolution changes on %s", monitorDesc)
-				continue // retry
-			case uintptr(DISP_CHANGE_BADMODE):
-				return fmt.Errorf("resolution %dx%d@%dHz is not supported by %s. Try a different refresh rate or resolution", resolution.Width, resolution.Height, resolution.Frequency, monitorDesc)
-			case uintptr(DISP_CHANGE_FAILED):
-				lastError = fmt.Errorf("failed to change display resolution on %s (insufficient permissions or driver issue)", monitorDesc)
-				continue // retry
-			case uintptr(DISP_CHANGE_NOTUPDATED):
-				lastError = fmt.Errorf("unable to write settings to registry for %s", monitorDesc)
-				continue // retry
-			case uintptr(DISP_CHANGE_BADFLAGS):
-				return fmt.Errorf("invalid flags passed for resolution change on %s", monitorDesc)
-			case uintptr(DISP_CHANGE_BADPARAM):
-				return fmt.Errorf("invalid parameter passed for resolution change on %s", monitorDesc)
-			case uintptr(DISP_CHANGE_BADDUALVIEW):
-				return fmt.Errorf("unable to change resolution on %s (DualView system)", monitorDesc)
-			default:
-				lastError = fmt.Errorf("unknown error occurred while changing resolution on %s (error code: %d, system error: %v)", monitorDesc, ret, err)
-				continue // retry
-			}
-		} else {
-			// Use ChangeDisplaySettings for primary monitor (no device name needed)
-			ret, _, err := dm.procChangeDisplaySettingsW.Call(
-				uintptr(unsafe.Pointer(&newMode)), // DEVMODE
-				uintptr(0),                        // dwflags
-			)
-
-			switch ret {
-			case uintptr(DISP_CHANGE_SUCCESSFUL):
-				return nil
-			case uintptr(DISP_CHANGE_RESTART):
-				lastError = fmt.Errorf("restart required to apply resolution changes on %s", monitorDesc)
-				continue // retry
-			case uintptr(DISP_CHANGE_BADMODE):
-				return fmt.Errorf("resolution %dx%d@%dHz is not supported by %s. Try a different refresh rate or resolution", resolution.Width, resolution.Height, resolution.Frequency, monitorDesc)
-			case uintptr(DISP_CHANGE_FAILED):
-				lastError = fmt.Errorf("failed to change display resolution on %s (insufficient permissions or driver issue)", monitorDesc)
-				continue // retry
-			case uintptr(DISP_CHANGE_NOTUPDATED):
-				lastError = fmt.Errorf("unable to write settings to registry for %s", monitorDesc)
-				continue // retry
-			case uintptr(DISP_CHANGE_BADFLAGS):
-				return fmt.Errorf("invalid flags passed for resolution change on %s", monitorDesc)
-			case uintptr(DISP_CHANGE_BADPARAM):
-				return fmt.Errorf("invalid parameter passed for resolution change on %s", monitorDesc)
-			case uintptr(DISP_CHANGE_BADDUALVIEW):
-				return fmt.Errorf("unable to change resolution on %s (DualView system)", monitorDesc)
-			default:
-				lastError = fmt.Errorf("unknown error occurred while changing resolution on %s (error code: %d, system error: %v)", monitorDesc, ret, err)
-				continue // retry
-			}
-		}
+		lastError = err
+		log.Printf("Attempt %d to change resolution failed: %v", i+1, err)
 	}
 
-	// If we get here, all retries failed
 	return fmt.Errorf("failed to change resolution after %d attempts. Last error: %v", maxRetries, lastError)
 }
 

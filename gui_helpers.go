@@ -38,6 +38,22 @@ func (g *GUIApp) parseAppInfo(appInfo string) (AppConfig, error) {
 	resolutionStr := remainder[:firstOpenParen]
 	monitorStr := strings.TrimSuffix(remainder[firstOpenParen+2:], ")")
 
+	// Find restore resolution if present
+	var restoreResolution *Resolution
+	if restoreIdx := strings.Index(monitorStr, "[Restore: "); restoreIdx != -1 {
+		restoreEnd := strings.Index(monitorStr[restoreIdx:], "]")
+		if restoreEnd != -1 {
+			restoreStr := monitorStr[restoreIdx+len("[Restore: ") : restoreIdx+restoreEnd]
+			if restoreStr != "default" {
+				res, err := parseResolutionString(restoreStr)
+				if err == nil {
+					restoreResolution = &res
+				}
+			}
+			monitorStr = strings.TrimSpace(monitorStr[:restoreIdx])
+		}
+	}
+
 	// Parse resolution: "1280x960@144Hz"
 	resolution, err := parseResolutionString(resolutionStr)
 	if err != nil {
@@ -47,18 +63,20 @@ func (g *GUIApp) parseAppInfo(appInfo string) (AppConfig, error) {
 	// Use the stored device name if we have it, otherwise convert from display name
 	if deviceName != "" {
 		return AppConfig{
-			ProcessName: processName,
-			Resolution:  resolution,
-			MonitorName: deviceName,
+			ProcessName:       processName,
+			Resolution:        resolution,
+			MonitorName:       deviceName,
+			RestoreResolution: restoreResolution,
 		}, nil
 	}
 
 	// Fallback to converting display name if no stored device name
 	monitorName := g.getDeviceNameFromDisplayName(monitorStr)
 	return AppConfig{
-		ProcessName: processName,
-		Resolution:  resolution,
-		MonitorName: monitorName,
+		ProcessName:       processName,
+		Resolution:        resolution,
+		MonitorName:       monitorName,
+		RestoreResolution: restoreResolution,
 	}, nil
 }
 

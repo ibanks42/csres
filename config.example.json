@@ -7,7 +7,12 @@
         "height": 960,
         "frequency": 144
       },
-      "monitor_name": "\\\\.\\DISPLAY1"
+      "monitor_name": "\\\\.\\DISPLAY1",
+      "restore_resolution": {
+        "width": 1920,
+        "height": 1080,
+        "frequency": 144
+      }
     }
   ],
   "poll_interval": 2
