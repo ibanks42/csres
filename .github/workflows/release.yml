@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: "1.24"
 
@@ -38,20 +38,14 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart('v')
           Write-Host "Building with version: $version"
           # Package the application with Fyne using semantic versioning
-          fyne package -os windows -icon icon.png -name "CS Resolution Monitor" --app-version $version --app-build ${{ github.run_number }}
+          fyne package -os windows -icon icon.png -name csres --app-version $version --app-build ${{ github.run_number }}
           echo "Built and packaged application with Fyne successfully"
 
       - name: Test build
         run: |
           # Test version output
-          ./"CS Resolution Monitor.exe" --version
+          ./csres.exe --version
           echo "Application built and version check successful"
-
-      - name: Rename for UPX
-        run: |
-          # Rename to simple name for UPX compatibility
-          Move-Item "CS Resolution Monitor.exe" "csres.exe"
-          echo "Renamed to simple name for UPX compression"
 
       - name: Compress with UPX
         uses: crazy-max/ghaction-upx@v3
@@ -61,16 +55,10 @@ jobs:
             ./csres.exe
           args: -fq
 
-      - name: Rename back to final name
-        run: |
-          # Rename the compressed file back to the final name
-          Move-Item "csres.exe" "CS Resolution Monitor.exe"
-          echo "Renamed compressed file back to final name"
-
       - name: Create zip file
         run: |
           # Create a zip file with the executable and config example
-          Compress-Archive -Path "CS Resolution Monitor.exe", "config.example.json" -DestinationPath "CS Resolution Monitor.zip" -Force
+          Compress-Archive -Path "csres.exe", "config.example.json" -DestinationPath "csres.zip" -Force
           echo "Created zip file with executable and config"
 
       - name: Create Release
@@ -100,10 +88,11 @@ jobs:
             - **Multiple Application Support**: Can monitor multiple applications simultaneously
 
             ### 🚀 Installation
-            1. Download `CS Resolution Monitor.exe` from the assets below
-            2. Run the application to generate a default `config.json`
-            3. Edit the configuration to add your applications and target resolutions
-            4. Run again to start monitoring
+            1. Download `csres.zip` from the assets below
+            2. Extract the zip file to get `csres.exe` and `config.example.json`
+            3. Run the application to generate a default `config.json`
+            4. Edit the configuration to add your applications and target resolutions
+            5. Run again to start monitoring
 
             ### ⚙️ Configuration Example
             ```json
@@ -134,7 +123,7 @@ jobs:
 
             **Full Changelog**: https://github.com/${{ github.repository }}/commits/main
           files: |
-            CS Resolution Monitor.zip
+            csres.zip
             config.example.json
           draft: false
           prerelease: false
