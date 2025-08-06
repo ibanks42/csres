@@ -18,13 +18,16 @@ A Go application that automatically changes desktop resolution when specific app
 ## Installation
 
 ### Option 1: Download Release (Recommended)
-1. Go to the [Releases page](https://github.com/username/csres/releases)
+
+1. Go to the [Releases page](https://github.com/ibanks42/csres/releases)
 2. Download the latest `csres.exe` from the assets
 3. Optionally download `config.example.json` for reference
 
 ### Option 2: Build from Source
+
 1. Clone or download this repository
 2. Build the application:
+
    ```bash
    go build -o csres.exe
    ```
@@ -95,6 +98,7 @@ The configuration file has the following structure:
 ### Monitor Names
 
 Monitor names follow Windows display device naming:
+
 - `""` (empty string): Primary monitor
 - `"\\\\.\\DISPLAY1"`: First display device
 - `"\\\\.\\DISPLAY2"`: Second display device
@@ -130,14 +134,17 @@ You can modify the `config.json` file while the application is running. Changes 
 ## Troubleshooting
 
 ### Resolution Not Supported Error
+
 If you get a "resolution not supported" error, check that your monitor supports the specified resolution and refresh rate.
 
 ### Process Not Detected
+
 - Ensure the process name exactly matches the executable name (case-insensitive)
 - Check that the application is actually running in Task Manager
 - Some applications may have different executable names than expected
 
 ### Permission Errors
+
 - Try running as Administrator if resolution changes fail
 - Some display drivers may require elevated privileges
 
